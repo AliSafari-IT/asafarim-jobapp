@@ -11,7 +11,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c => {
+    c.OperationFilter<FileUploadOperationFilter>();
+});
 
 // Configure database based on environment
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -48,9 +50,9 @@ builder
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>();
-if (jwtSettings?.Secret != null)
+if (jwtSettings?.Key != null)
 {
-    var key = Encoding.ASCII.GetBytes(jwtSettings.Secret);
+    var key = Encoding.ASCII.GetBytes(jwtSettings.Key);
 
     builder
         .Services.AddAuthentication(options =>

@@ -1,12 +1,12 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
 using backend.DTOs.Auth;
 using backend.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace backend.Controllers;
 
@@ -23,7 +23,8 @@ public class AuthController : ControllerBase
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
         IOptions<JwtSettings> jwtSettings,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger
+    )
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -49,7 +50,7 @@ public class AuthController : ControllerBase
                 FirstName = model.FirstName,
                 LastName = model.LastName,
                 CreatedAt = DateTime.UtcNow,
-                IsActive = true
+                IsActive = true,
             };
 
             var result = await _userManager.CreateAsync(user, model.Password);
@@ -69,9 +70,16 @@ public class AuthController : ControllerBase
             _logger.LogError(ex, "Error during registration: {Message}", ex.Message);
             if (ex.InnerException != null)
             {
-                _logger.LogError(ex.InnerException, "Inner exception: {Message}", ex.InnerException.Message);
+                _logger.LogError(
+                    ex.InnerException,
+                    "Inner exception: {Message}",
+                    ex.InnerException.Message
+                );
             }
-            return StatusCode(500, new { message = "An error occurred during registration", error = ex.Message });
+            return StatusCode(
+                500,
+                new { message = "An error occurred during registration", error = ex.Message }
+            );
         }
     }
 
@@ -108,14 +116,14 @@ public class AuthController : ControllerBase
     private string GenerateJwtToken(ApplicationUser user)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.ASCII.GetBytes(_jwtSettings.Secret);
-        
+        var key = Encoding.ASCII.GetBytes(_jwtSettings.Key);
+
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id),
             new(ClaimTypes.Email, user.Email ?? string.Empty),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Sub, user.Email ?? string.Empty)
+            new(JwtRegisteredClaimNames.Sub, user.Email ?? string.Empty),
         };
 
         // Add roles
@@ -129,8 +137,9 @@ public class AuthController : ControllerBase
             Issuer = _jwtSettings.Issuer,
             Audience = _jwtSettings.Audience,
             SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(key), 
-                SecurityAlgorithms.HmacSha256Signature)
+                new SymmetricSecurityKey(key),
+                SecurityAlgorithms.HmacSha256Signature
+            ),
         };
 
         var token = tokenHandler.CreateToken(tokenDescriptor);

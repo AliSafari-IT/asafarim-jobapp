@@ -4,11 +4,14 @@
   "description": "Job Application Tracker Backend",
   "main": "index.js",
   "scripts": {
-    "kp": "kill -9 $(lsof -t -i:5213) || true",
+    "kp": "pnpm kill-port 5213 || true",
     "start": "pnpm run kp && pnpm --filter=asafarim-jobapp-backend run watch",
     "build": "dotnet build",
     "watch": "dotnet watch run",
     "publish": "dotnet publish -c Release"
+  },
+  "devDependencies": {
+    "kill-port": "^2.0.1"
   },
   "keywords": [],
   "author": "Ali Safari",
