@@ -1,0 +1,22 @@
+{
+  "name": "asafarim-jobapp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "pnpm --filter=asafarim-jobapp-frontend dev",
+    "api": "pnpm --filter=asafarim-jobapp-backend start",
+    "build": "pnpm --filter=asafarim-jobapp-frontend run build && pnpm --filter=asafarim-jobapp-backend run build",
+    "preview": "pnpm --filter=asafarim-jobapp-frontend preview",
+    "app": "concurrently \"pnpm dev\" \"pnpm api\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "turbo": "^2.5.5"
+  },
+  "keywords": [],
+  "author": "Ali Safari",
+  "license": "ISC",
+  "packageManager": "pnpm@10.14.0"
+}
