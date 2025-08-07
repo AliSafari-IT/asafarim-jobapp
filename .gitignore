@@ -116,7 +116,6 @@ Scaffolding/
 *.log
 *.gz
 usersecrets/secrets.json
-backend/
 
 
 # Ignore all log files and directories

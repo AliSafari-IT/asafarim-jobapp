@@ -1,0 +1,17 @@
+{
+  "name": "asafarim-jobapp-backend",
+  "version": "1.0.0",
+  "description": "Job Application Tracker Backend",
+  "main": "index.js",
+  "scripts": {
+    "kp": "kill -9 $(lsof -t -i:5213) || true",
+    "start": "pnpm run kp && pnpm --filter=asafarim-jobapp-backend run watch",
+    "build": "dotnet build",
+    "watch": "dotnet watch run",
+    "publish": "dotnet publish -c Release"
+  },
+  "keywords": [],
+  "author": "Ali Safari",
+  "license": "ISC",
+  "packageManager": "pnpm@10.14.0"
+}

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { getDashboard } from '../../store/slices/jobApplicationsSlice';
 import type { JobApplication } from '../../store/slices/jobApplicationsSlice';
@@ -21,6 +22,7 @@ interface Interview {
 }
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { dashboard, isLoading } = useAppSelector((state) => state.jobApplications);
 
@@ -202,7 +204,10 @@ const Dashboard: React.FC = () => {
             Quick Actions
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <button className="btn-primary flex items-center justify-center space-x-2 py-3">
+            <button 
+              onClick={() => navigate('/applications/new')} 
+              className="btn-primary flex items-center justify-center space-x-2 py-3"
+            >
               <FileText className="h-5 w-5" />
               <span>Add Application</span>
             </button>
