@@ -3,10 +3,12 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { fetchJobApplications, ApplicationStatus } from '../../store/slices/jobApplicationsSlice';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import { FileText, Plus, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const JobApplicationsList: React.FC = () => {
   const dispatch = useAppDispatch();
   const { applications, isLoading } = useAppSelector((state) => state.jobApplications);
+  const navigate = useNavigate();
 
   useEffect(() => {
     dispatch(fetchJobApplications({ page: 1, pageSize: 20 }));
@@ -30,7 +32,7 @@ const JobApplicationsList: React.FC = () => {
             Manage and track your job applications
           </p>
         </div>
-        <button className="btn-primary flex items-center space-x-2">
+        <button onClick={() => navigate('/applications/new')} className="btn-primary flex items-center space-x-2">
           <Plus className="h-5 w-5" />
           <span>Add Application</span>
         </button>
@@ -69,7 +71,7 @@ const JobApplicationsList: React.FC = () => {
               Get started by creating your first job application.
             </p>
             <div className="mt-6">
-              <button className="btn-primary flex items-center space-x-2 mx-auto">
+              <button onClick={() => navigate('/applications/new')} className="btn-primary flex items-center space-x-2 mx-auto">
                 <Plus className="h-5 w-5" />
                 <span>Add Application</span>
               </button>

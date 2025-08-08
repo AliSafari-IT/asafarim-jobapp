@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import type { SubmitHandler } from 'react-hook-form';
 import { toast } from 'react-hot-toast';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { createJobApplication, ApplicationStatus } from '../../store/slices/jobApplicationsSlice';
+import { createJobApplication, ApplicationStatus, type CreateJobApplicationDto } from '../../store/slices/jobApplicationsSlice';
 import { fetchCompanies } from '../../store/slices/companiesSlice';
 import LoadingSpinner from '../UI/LoadingSpinner';
 
@@ -15,13 +15,17 @@ interface JobApplicationFormData {
   applicationDate: string; // Will be mapped to dateApplied
   status: ApplicationStatus;
   notes: string;
+  tags: string[]; // ✅ Add this
+  attachmentPaths: string[]; // ✅ Add this
 }
 
 const JobApplicationForm: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { companies, isLoading: isLoadingCompanies } = useAppSelector((state) => state.companies);
+  
+  const companies = useAppSelector((state) => state.companies.companies);
+  const isLoadingCompanies = useAppSelector((state) => state.companies.isLoading);
   
   useEffect(() => {
     dispatch(fetchCompanies({ page: 1, pageSize: 100 }));
@@ -30,33 +34,112 @@ const JobApplicationForm: React.FC = () => {
   const { register, handleSubmit, formState: { errors } } = useForm<JobApplicationFormData>({
     defaultValues: {
       jobTitle: '',
-      companyId: 0, // This will need to be selected from a dropdown
+      companyId: 0,
       location: '',
-      applicationDate: new Date().toISOString().split('T')[0],
+      applicationDate: (() => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      })(),
       status: ApplicationStatus.Applied,
-      notes: ''
+      notes: '',
+      tags: [], // ✅ Required
+      attachmentPaths: [] // ✅ Required
     }
   });
 
   const onSubmit: SubmitHandler<JobApplicationFormData> = async (formData) => {
+    console.log("📦 Payload:", formData);
     try {
       setIsSubmitting(true);
       
       // Map form data to CreateJobApplicationDto
-      const applicationData = {
-        jobTitle: formData.jobTitle,
-        companyId: formData.companyId,
-        location: formData.location,
-        dateApplied: formData.applicationDate,
+      const applicationData: CreateJobApplicationDto = {
+        jobTitle: formData.jobTitle.trim(),
+        companyId: parseInt(formData.companyId.toString()),
+        location: formData.location?.trim() || undefined,
+        dateApplied: formData.applicationDate, // YYYY-MM-DD format
         status: formData.status,
-        notes: formData.notes
-      };
+        notes: formData.notes?.trim() || undefined,
+        tags: formData.tags || [],
+        attachmentPaths: formData.attachmentPaths || []
+      }; 
+      
+      // Log the data being sent to the backend
+      console.log('Sending job application data:', applicationData);
+      console.log('Available companies:', companies);
+      console.log('Company IDs available:', companies.map(c => c.id));
+      console.log('Selected company ID:', formData.companyId);
+      console.log('Selected company ID type:', typeof formData.companyId);
+      console.log('Company ID match found:', companies.find(c => c.id === parseInt(formData.companyId.toString())));
       
       await dispatch(createJobApplication(applicationData)).unwrap();
       toast.success('Job application added successfully!');
       navigate('/applications');
     } catch (error) {
       console.error('Failed to add job application:', error);
+      
+      // Log more detailed error information
+      if (error && typeof error === 'object') {
+        // Type assertion for Axios error
+        const axiosError = error as { 
+          response?: { 
+            data?: Record<string, unknown> | string,
+            status?: number 
+          },
+          config?: {
+            data?: string,
+            headers?: Record<string, string>
+          }
+        };
+        
+        if (axiosError.response) {
+          console.error('Error response data:', axiosError.response.data);
+          console.error('Error response status:', axiosError.response.status);
+          console.error('Full error response:', axiosError.response);
+          console.error('Raw response text:', JSON.stringify(axiosError.response.data));
+          
+          // Log the request data that was sent
+          if (axiosError.config) {
+            console.error('Request data sent:', axiosError.config.data);
+            console.error('Request headers:', axiosError.config.headers);
+          }
+          
+          // Show more specific error message if available
+          let errorMessage = 'Failed to add job application';
+          
+          if (typeof axiosError.response.data === 'object' && axiosError.response.data) {
+            const errorData = axiosError.response.data as Record<string, unknown>;
+            
+            // Check for ASP.NET ValidationProblemDetails format
+            if (errorData.errors && typeof errorData.errors === 'object') {
+              console.error('Backend validation errors:', errorData.errors);
+              // Flatten validation errors into readable format
+              const errorEntries = Object.entries(errorData.errors as Record<string, string[]>);
+              if (errorEntries.length > 0) {
+                const [field, messages] = errorEntries[0];
+                const message = Array.isArray(messages) ? messages[0] : messages;
+                errorMessage = `${field}: ${message}`;
+              }
+            } else if (errorData.title) {
+              errorMessage = errorData.title as string;
+            } else if (errorData.message) {
+              errorMessage = errorData.message as string;
+            } else {
+              console.error('Backend error object:', JSON.stringify(errorData, null, 2));
+              errorMessage = JSON.stringify(errorData);
+            }
+          } else if (typeof axiosError.response.data === 'string') {
+            errorMessage = axiosError.response.data;
+          }
+                
+          toast.error(`Failed to add job application: ${errorMessage}`);
+          return;
+        }
+      }
+      
       toast.error('Failed to add job application. Please try again.');
     } finally {
       setIsSubmitting(false);

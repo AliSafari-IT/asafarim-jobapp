@@ -39,7 +39,7 @@ export interface CreateJobApplicationDto {
   location?: string;
   jobUrl?: string;
   status?: ApplicationStatus;
-  dateApplied?: string;
+  dateApplied: string; // Required string in YYYY-MM-DD format
   source?: string;
   tags?: string[];
   contactPersonName?: string;

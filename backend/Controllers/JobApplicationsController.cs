@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using backend.Data;
@@ -26,11 +27,15 @@ public class JobApplicationsController : ControllerBase
         _logger = logger;
     }
 
-    private string GetCurrentUserId()
-    {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? throw new UnauthorizedAccessException();
-    }
+    private string GetCurrentUserId() =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException();
+
+    private List<string> DeserializeList(string? json) =>
+        string.IsNullOrWhiteSpace(json)
+            ? new()
+            : JsonSerializer.Deserialize<List<string>>(json) ?? new();
+
+    #region CRUD
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetJobApplications(
@@ -49,22 +54,17 @@ public class JobApplicationsController : ControllerBase
                 .Include(ja => ja.Resume)
                 .Where(ja => ja.UserId == userId);
 
-            // Apply filters
             if (status.HasValue)
-            {
                 query = query.Where(ja => ja.Status == status.Value);
-            }
 
-            if (!string.IsNullOrEmpty(search))
-            {
+            if (!string.IsNullOrWhiteSpace(search))
                 query = query.Where(ja =>
                     ja.JobTitle.Contains(search)
                     || ja.Company.Name.Contains(search)
                     || (ja.Notes != null && ja.Notes.Contains(search))
                 );
-            }
 
-            if (!string.IsNullOrEmpty(tags))
+            if (!string.IsNullOrWhiteSpace(tags))
             {
                 var tagList = tags.Split(',').Select(t => t.Trim()).ToList();
                 query = query.Where(ja =>
@@ -72,7 +72,6 @@ public class JobApplicationsController : ControllerBase
                 );
             }
 
-            // Apply pagination
             var totalCount = await query.CountAsync();
             var applications = await query
                 .OrderByDescending(ja => ja.DateApplied)
@@ -92,19 +91,14 @@ public class JobApplicationsController : ControllerBase
                     Status = ja.Status,
                     DateApplied = ja.DateApplied,
                     Source = ja.Source,
-                    Tags = string.IsNullOrEmpty(ja.Tags)
-                        ? new List<string>()
-                        : JsonSerializer.Deserialize<List<string>>(ja.Tags) ?? new List<string>(),
+                    Tags = DeserializeList(ja.Tags),
                     ContactPersonName = ja.ContactPersonName,
                     ContactPersonEmail = ja.ContactPersonEmail,
                     ContactPersonPhone = ja.ContactPersonPhone,
                     Notes = ja.Notes,
                     ResumeId = ja.ResumeId,
                     ResumeTitle = ja.Resume?.Title,
-                    AttachmentPaths = string.IsNullOrEmpty(ja.AttachmentPaths)
-                        ? new List<string>()
-                        : JsonSerializer.Deserialize<List<string>>(ja.AttachmentPaths)
-                            ?? new List<string>(),
+                    AttachmentPaths = DeserializeList(ja.AttachmentPaths),
                     CreatedAt = ja.CreatedAt,
                     UpdatedAt = ja.UpdatedAt,
                 })
@@ -132,44 +126,35 @@ public class JobApplicationsController : ControllerBase
         try
         {
             var userId = GetCurrentUserId();
-            var jobApplication = await _context
-                .JobApplications.Include(ja => ja.Company)
-                .Include(ja => ja.Resume)
-                .Include(ja => ja.Feedbacks)
-                .FirstOrDefaultAsync(ja => ja.Id == id && ja.UserId == userId);
+            var ja = await _context
+                .JobApplications.Include(j => j.Company)
+                .Include(j => j.Resume)
+                .FirstOrDefaultAsync(j => j.Id == id && j.UserId == userId);
 
-            if (jobApplication == null)
-            {
+            if (ja == null)
                 return NotFound(new { message = "Job application not found" });
-            }
 
             var result = new JobApplicationDto
             {
-                Id = jobApplication.Id,
-                JobTitle = jobApplication.JobTitle,
-                CompanyId = jobApplication.CompanyId,
-                CompanyName = jobApplication.Company.Name,
-                Location = jobApplication.Location,
-                JobUrl = jobApplication.JobUrl,
-                Status = jobApplication.Status,
-                DateApplied = jobApplication.DateApplied,
-                Source = jobApplication.Source,
-                Tags = string.IsNullOrEmpty(jobApplication.Tags)
-                    ? new List<string>()
-                    : JsonSerializer.Deserialize<List<string>>(jobApplication.Tags)
-                        ?? new List<string>(),
-                ContactPersonName = jobApplication.ContactPersonName,
-                ContactPersonEmail = jobApplication.ContactPersonEmail,
-                ContactPersonPhone = jobApplication.ContactPersonPhone,
-                Notes = jobApplication.Notes,
-                ResumeId = jobApplication.ResumeId,
-                ResumeTitle = jobApplication.Resume?.Title,
-                AttachmentPaths = string.IsNullOrEmpty(jobApplication.AttachmentPaths)
-                    ? new List<string>()
-                    : JsonSerializer.Deserialize<List<string>>(jobApplication.AttachmentPaths)
-                        ?? new List<string>(),
-                CreatedAt = jobApplication.CreatedAt,
-                UpdatedAt = jobApplication.UpdatedAt,
+                Id = ja.Id,
+                JobTitle = ja.JobTitle,
+                CompanyId = ja.CompanyId,
+                CompanyName = ja.Company.Name,
+                Location = ja.Location,
+                JobUrl = ja.JobUrl,
+                Status = ja.Status,
+                DateApplied = ja.DateApplied,
+                Source = ja.Source,
+                Tags = DeserializeList(ja.Tags),
+                ContactPersonName = ja.ContactPersonName,
+                ContactPersonEmail = ja.ContactPersonEmail,
+                ContactPersonPhone = ja.ContactPersonPhone,
+                Notes = ja.Notes,
+                ResumeId = ja.ResumeId,
+                ResumeTitle = ja.Resume?.Title,
+                AttachmentPaths = DeserializeList(ja.AttachmentPaths),
+                CreatedAt = ja.CreatedAt,
+                UpdatedAt = ja.UpdatedAt,
             };
 
             return Ok(result);
@@ -184,109 +169,242 @@ public class JobApplicationsController : ControllerBase
         }
     }
 
-    [HttpPost]
-    public async Task<ActionResult<JobApplicationDto>> CreateJobApplication(
-        CreateJobApplicationDto createDto
-    )
+    [HttpPost("simple")]
+    public async Task<ActionResult<JobApplicationDto>> CreateJobApplicationSimple([FromBody] JsonElement data)
     {
         try
         {
             var userId = GetCurrentUserId();
-
-            // Validate company exists and belongs to user
-            var company = await _context.Companies.FirstOrDefaultAsync(c =>
-                c.Id == createDto.CompanyId && c.UserId == userId
-            );
-            if (company == null)
+            
+            // Extract properties from JsonElement
+            string jobTitle = "";
+            int companyId = 0;
+            string location = "";
+            string notes = "";
+            DateTime dateApplied = DateTime.UtcNow;
+            
+            if (data.TryGetProperty("jobTitle", out var jobTitleElement))
             {
-                return BadRequest(new { message = "Company not found or access denied" });
+                jobTitle = jobTitleElement.GetString() ?? "";
+            }
+            
+            if (data.TryGetProperty("companyId", out var companyIdElement))
+            {
+                companyId = companyIdElement.GetInt32();
+            }
+            
+            if (data.TryGetProperty("location", out var locationElement))
+            {
+                location = locationElement.GetString() ?? "";
+            }
+            
+            if (data.TryGetProperty("notes", out var notesElement))
+            {
+                notes = notesElement.GetString() ?? "";
+            }
+            
+            if (data.TryGetProperty("dateApplied", out var dateElement))
+            {
+                DateTime.TryParse(dateElement.GetString(), out dateApplied);
+            }
+            
+            // Simple validation
+            if (string.IsNullOrWhiteSpace(jobTitle))
+            {
+                return BadRequest(new { message = "Job title is required" });
             }
 
-            // Validate resume exists and belongs to user (if provided)
-            if (createDto.ResumeId.HasValue)
+            if (companyId <= 0)
             {
-                var resume = await _context.Resumes.FirstOrDefaultAsync(r =>
-                    r.Id == createDto.ResumeId.Value && r.UserId == userId
-                );
-                if (resume == null)
-                {
-                    return BadRequest(new { message = "Resume not found or access denied" });
-                }
+                return BadRequest(new { message = "Valid company ID is required" });
             }
 
-            var jobApplication = new JobApplication
+            // Check for duplicate job application
+            var existingApplication = await _context.JobApplications
+                .FirstOrDefaultAsync(ja => 
+                    ja.UserId == userId && 
+                    ja.JobTitle.ToLower() == jobTitle.ToLower() && 
+                    ja.CompanyId == companyId);
+
+            if (existingApplication != null)
             {
-                JobTitle = createDto.JobTitle,
-                CompanyId = createDto.CompanyId,
-                Location = createDto.Location,
-                JobUrl = createDto.JobUrl,
-                Status = createDto.Status,
-                DateApplied = createDto.DateApplied,
-                Source = createDto.Source,
-                Tags = createDto.Tags.Any() ? JsonSerializer.Serialize(createDto.Tags) : null,
-                ContactPersonName = createDto.ContactPersonName,
-                ContactPersonEmail = createDto.ContactPersonEmail,
-                ContactPersonPhone = createDto.ContactPersonPhone,
-                Notes = createDto.Notes,
-                ResumeId = createDto.ResumeId,
-                AttachmentPaths = createDto.AttachmentPaths.Any()
-                    ? JsonSerializer.Serialize(createDto.AttachmentPaths)
-                    : null,
+                return BadRequest(new { 
+                    message = $"You already have a job application for '{jobTitle}' at this company. Please use a different job title or update the existing application." 
+                });
+            }
+
+            // Create job application
+            var ja = new JobApplication
+            {
+                JobTitle = jobTitle,
+                CompanyId = companyId,
+                Location = location,
+                JobUrl = null,
+                Status = ApplicationStatus.Applied,
+                DateApplied = dateApplied,
+                Source = null,
+                Tags = "[]",
+                ContactPersonName = null,
+                ContactPersonEmail = null,
+                ContactPersonPhone = null,
+                Notes = notes,
+                ResumeId = null,
+                AttachmentPaths = "[]",
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
             };
 
-            _context.JobApplications.Add(jobApplication);
+            _context.JobApplications.Add(ja);
             await _context.SaveChangesAsync();
 
-            // Create audit log
-            await CreateAuditLog(
-                "JobApplication",
-                jobApplication.Id,
-                "Create",
-                null,
-                null,
-                null,
-                userId
-            );
+            // Return success
+            return Ok(new { 
+                message = "Job application created successfully",
+                id = ja.Id 
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating job application");
+            return BadRequest(new { message = "Failed to create job application: " + ex.Message });
+        }
+    }
 
-            // Reload with includes for response
-            await _context.Entry(jobApplication).Reference(ja => ja.Company).LoadAsync();
+    [HttpPost]
+    public async Task<ActionResult<JobApplicationDto>> CreateJobApplication(
+        CreateJobApplicationDto dto
+    )
+    {
+        _logger.LogInformation("Received DTO: {@Dto}", dto);
 
-            if (jobApplication.ResumeId.HasValue)
+        try
+        {
+            // Manual validation to provide better error messages
+            if (string.IsNullOrWhiteSpace(dto.JobTitle))
             {
-                await _context.Entry(jobApplication).Reference(ja => ja.Resume).LoadAsync();
+                return BadRequest(new { message = "Job title is required" });
             }
+
+            if (dto.CompanyId <= 0)
+            {
+                return BadRequest(new { message = "Valid company ID is required" });
+            }
+
+            var userId = GetCurrentUserId();
+
+            // Check for duplicate job application
+            var existingApplication = await _context.JobApplications
+                .FirstOrDefaultAsync(ja => 
+                    ja.UserId == userId && 
+                    ja.JobTitle.ToLower() == dto.JobTitle.ToLower() && 
+                    ja.CompanyId == dto.CompanyId);
+
+            if (existingApplication != null)
+            {
+                return BadRequest(new { 
+                    message = $"You already have a job application for '{dto.JobTitle}' at this company. Please use a different job title or update the existing application." 
+                });
+            }
+
+            // Parse date string to DateTime
+            DateTime parsedDate;
+            if (string.IsNullOrWhiteSpace(dto.DateApplied))
+            {
+                parsedDate = DateTime.UtcNow;
+            }
+            else
+            {
+                if (!DateTime.TryParseExact(dto.DateApplied, "yyyy-MM-dd", null, DateTimeStyles.None, out parsedDate))
+                {
+                    return BadRequest(new { message = "Invalid date format. Use YYYY-MM-DD format." });
+                }
+            }
+
+            if (!ModelState.IsValid)
+            {
+                foreach (var error in ModelState)
+                {
+                    foreach (var subError in error.Value.Errors)
+                    {
+                        _logger.LogError("Model error on '{Field}': {Error}", error.Key, subError.ErrorMessage);
+                    }
+                }
+                return BadRequest(new { message = "Validation failed", errors = ModelState });
+            }
+
+            var company = await _context.Companies.FirstOrDefaultAsync(c =>
+                c.Id == dto.CompanyId && c.UserId == userId
+            );
+            if (company == null)
+                return BadRequest(new { message = "Company not found or access denied" });
+
+            if (dto.ResumeId.HasValue)
+            {
+                var resume = await _context.Resumes.FirstOrDefaultAsync(r =>
+                    r.Id == dto.ResumeId && r.UserId == userId
+                );
+                if (resume == null)
+                    return BadRequest(new { message = "Resume not found or access denied" });
+            }
+
+            var ja = new JobApplication
+            {
+                JobTitle = dto.JobTitle,
+                CompanyId = dto.CompanyId,
+                Location = dto.Location,
+                JobUrl = dto.JobUrl,
+                Status = dto.Status,
+                DateApplied = parsedDate,
+                Source = dto.Source,
+                Tags = dto.Tags.Count != 0 ? JsonSerializer.Serialize(dto.Tags) : null,
+                ContactPersonName = dto.ContactPersonName,
+                ContactPersonEmail = dto.ContactPersonEmail,
+                ContactPersonPhone = dto.ContactPersonPhone,
+                Notes = dto.Notes,
+                ResumeId = dto.ResumeId,
+                AttachmentPaths =
+                    dto.AttachmentPaths.Count != 0
+                        ? JsonSerializer.Serialize(dto.AttachmentPaths)
+                        : null,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+
+            _context.JobApplications.Add(ja);
+            await _context.SaveChangesAsync();
+
+            await CreateAuditLog("JobApplication", ja.Id, "Create", null, null, null, userId);
+
+            await _context.Entry(ja).Reference(j => j.Company).LoadAsync();
+            if (ja.ResumeId.HasValue)
+                await _context.Entry(ja).Reference(j => j.Resume).LoadAsync();
 
             var result = new JobApplicationDto
             {
-                Id = jobApplication.Id,
-                JobTitle = jobApplication.JobTitle,
-                CompanyId = jobApplication.CompanyId,
-                CompanyName = jobApplication.Company.Name,
-                Location = jobApplication.Location,
-                JobUrl = jobApplication.JobUrl,
-                Status = jobApplication.Status,
-                DateApplied = jobApplication.DateApplied,
-                Source = jobApplication.Source,
-                Tags = createDto.Tags,
-                ContactPersonName = jobApplication.ContactPersonName,
-                ContactPersonEmail = jobApplication.ContactPersonEmail,
-                ContactPersonPhone = jobApplication.ContactPersonPhone,
-                Notes = jobApplication.Notes,
-                ResumeId = jobApplication.ResumeId,
-                ResumeTitle = jobApplication.Resume?.Title,
-                AttachmentPaths = createDto.AttachmentPaths,
-                CreatedAt = jobApplication.CreatedAt,
-                UpdatedAt = jobApplication.UpdatedAt,
+                Id = ja.Id,
+                JobTitle = ja.JobTitle,
+                CompanyId = ja.CompanyId,
+                CompanyName = ja.Company.Name,
+                Location = ja.Location,
+                JobUrl = ja.JobUrl,
+                Status = ja.Status,
+                DateApplied = ja.DateApplied,
+                Source = ja.Source,
+                Tags = dto.Tags,
+                ContactPersonName = ja.ContactPersonName,
+                ContactPersonEmail = ja.ContactPersonEmail,
+                ContactPersonPhone = ja.ContactPersonPhone,
+                Notes = ja.Notes,
+                ResumeId = ja.ResumeId,
+                ResumeTitle = ja.Resume?.Title,
+                AttachmentPaths = dto.AttachmentPaths,
+                CreatedAt = ja.CreatedAt,
+                UpdatedAt = ja.UpdatedAt,
             };
 
-            return CreatedAtAction(
-                nameof(GetJobApplication),
-                new { id = jobApplication.Id },
-                result
-            );
+            return CreatedAtAction(nameof(GetJobApplication), new { id = ja.Id }, result);
         }
         catch (Exception ex)
         {
@@ -299,124 +417,91 @@ public class JobApplicationsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateJobApplication(int id, UpdateJobApplicationDto updateDto)
+    public async Task<IActionResult> UpdateJobApplication(int id, UpdateJobApplicationDto dto)
     {
         try
         {
             var userId = GetCurrentUserId();
-            var jobApplication = await _context.JobApplications.FirstOrDefaultAsync(ja =>
-                ja.Id == id && ja.UserId == userId
+            var ja = await _context.JobApplications.FirstOrDefaultAsync(j =>
+                j.Id == id && j.UserId == userId
             );
 
-            if (jobApplication == null)
-            {
+            if (ja == null)
                 return NotFound(new { message = "Job application not found" });
-            }
 
-            // Store old values for audit log
             var oldValues = new Dictionary<string, object?>
             {
-                ["JobTitle"] = jobApplication.JobTitle,
-                ["Status"] = jobApplication.Status,
-                ["Location"] = jobApplication.Location,
-                ["Notes"] = jobApplication.Notes,
+                ["JobTitle"] = ja.JobTitle,
+                ["Status"] = ja.Status,
+                ["Location"] = ja.Location,
+                ["Notes"] = ja.Notes,
             };
 
-            // Update fields if provided
-            if (!string.IsNullOrEmpty(updateDto.JobTitle))
-                jobApplication.JobTitle = updateDto.JobTitle;
+            if (!string.IsNullOrWhiteSpace(dto.JobTitle))
+                ja.JobTitle = dto.JobTitle;
+            if (dto.Location != null)
+                ja.Location = dto.Location;
+            if (dto.JobUrl != null)
+                ja.JobUrl = dto.JobUrl;
+            if (dto.Status.HasValue)
+                ja.Status = dto.Status.Value;
+            if (dto.DateApplied.HasValue)
+                ja.DateApplied = dto.DateApplied.Value;
+            if (dto.Source != null)
+                ja.Source = dto.Source;
+            if (dto.Tags != null)
+                ja.Tags = dto.Tags.Any() ? JsonSerializer.Serialize(dto.Tags) : null;
+            if (dto.ContactPersonName != null)
+                ja.ContactPersonName = dto.ContactPersonName;
+            if (dto.ContactPersonEmail != null)
+                ja.ContactPersonEmail = dto.ContactPersonEmail;
+            if (dto.ContactPersonPhone != null)
+                ja.ContactPersonPhone = dto.ContactPersonPhone;
+            if (dto.Notes != null)
+                ja.Notes = dto.Notes;
+            if (dto.AttachmentPaths != null)
+                ja.AttachmentPaths = dto.AttachmentPaths.Any()
+                    ? JsonSerializer.Serialize(dto.AttachmentPaths)
+                    : null;
 
-            if (updateDto.CompanyId.HasValue)
+            if (dto.CompanyId.HasValue)
             {
-                // Validate company exists and belongs to user
                 var company = await _context.Companies.FirstOrDefaultAsync(c =>
-                    c.Id == updateDto.CompanyId.Value && c.UserId == userId
+                    c.Id == dto.CompanyId && c.UserId == userId
                 );
                 if (company == null)
-                {
                     return BadRequest(new { message = "Company not found or access denied" });
-                }
-                jobApplication.CompanyId = updateDto.CompanyId.Value;
+
+                ja.CompanyId = dto.CompanyId.Value;
             }
 
-            if (updateDto.Location != null)
-                jobApplication.Location = updateDto.Location;
-
-            if (updateDto.JobUrl != null)
-                jobApplication.JobUrl = updateDto.JobUrl;
-
-            if (updateDto.Status.HasValue)
-                jobApplication.Status = updateDto.Status.Value;
-
-            if (updateDto.DateApplied.HasValue)
-                jobApplication.DateApplied = updateDto.DateApplied.Value;
-
-            if (updateDto.Source != null)
-                jobApplication.Source = updateDto.Source;
-
-            if (updateDto.Tags != null)
-                jobApplication.Tags = updateDto.Tags.Any()
-                    ? JsonSerializer.Serialize(updateDto.Tags)
-                    : null;
-
-            if (updateDto.ContactPersonName != null)
-                jobApplication.ContactPersonName = updateDto.ContactPersonName;
-
-            if (updateDto.ContactPersonEmail != null)
-                jobApplication.ContactPersonEmail = updateDto.ContactPersonEmail;
-
-            if (updateDto.ContactPersonPhone != null)
-                jobApplication.ContactPersonPhone = updateDto.ContactPersonPhone;
-
-            if (updateDto.Notes != null)
-                jobApplication.Notes = updateDto.Notes;
-
-            if (updateDto.ResumeId.HasValue)
+            if (dto.ResumeId.HasValue)
             {
-                if (updateDto.ResumeId.Value > 0)
+                if (dto.ResumeId.Value > 0)
                 {
-                    // Validate resume exists and belongs to user
                     var resume = await _context.Resumes.FirstOrDefaultAsync(r =>
-                        r.Id == updateDto.ResumeId.Value && r.UserId == userId
+                        r.Id == dto.ResumeId && r.UserId == userId
                     );
                     if (resume == null)
-                    {
                         return BadRequest(new { message = "Resume not found or access denied" });
-                    }
                 }
-                jobApplication.ResumeId =
-                    updateDto.ResumeId.Value == 0 ? null : updateDto.ResumeId.Value;
+                ja.ResumeId = dto.ResumeId == 0 ? null : dto.ResumeId;
             }
 
-            if (updateDto.AttachmentPaths != null)
-                jobApplication.AttachmentPaths = updateDto.AttachmentPaths.Any()
-                    ? JsonSerializer.Serialize(updateDto.AttachmentPaths)
-                    : null;
-
-            jobApplication.UpdatedAt = DateTime.UtcNow;
-
+            ja.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            // Create audit logs for changed fields
-            var newValues = new Dictionary<string, object?>
+            foreach (var key in oldValues.Keys)
             {
-                ["JobTitle"] = jobApplication.JobTitle,
-                ["Status"] = jobApplication.Status,
-                ["Location"] = jobApplication.Location,
-                ["Notes"] = jobApplication.Notes,
-            };
-
-            foreach (var kvp in oldValues)
-            {
-                if (!Equals(kvp.Value, newValues[kvp.Key]))
+                if (!Equals(oldValues[key], typeof(JobApplication).GetProperty(key)?.GetValue(ja)))
                 {
                     await CreateAuditLog(
                         "JobApplication",
-                        jobApplication.Id,
+                        ja.Id,
                         "Update",
-                        kvp.Key,
-                        kvp.Value?.ToString(),
-                        newValues[kvp.Key]?.ToString(),
+                        key,
+                        oldValues[key]?.ToString(),
+                        typeof(JobApplication).GetProperty(key)?.GetValue(ja)?.ToString(),
                         userId
                     );
                 }
@@ -440,28 +525,17 @@ public class JobApplicationsController : ControllerBase
         try
         {
             var userId = GetCurrentUserId();
-            var jobApplication = await _context.JobApplications.FirstOrDefaultAsync(ja =>
-                ja.Id == id && ja.UserId == userId
+            var ja = await _context.JobApplications.FirstOrDefaultAsync(j =>
+                j.Id == id && j.UserId == userId
             );
 
-            if (jobApplication == null)
-            {
+            if (ja == null)
                 return NotFound(new { message = "Job application not found" });
-            }
 
-            _context.JobApplications.Remove(jobApplication);
+            _context.JobApplications.Remove(ja);
             await _context.SaveChangesAsync();
 
-            // Create audit log
-            await CreateAuditLog(
-                "JobApplication",
-                id,
-                "Delete",
-                null,
-                jobApplication.JobTitle,
-                null,
-                userId
-            );
+            await CreateAuditLog("JobApplication", id, "Delete", null, ja.JobTitle, null, userId);
 
             return NoContent();
         }
@@ -475,30 +549,36 @@ public class JobApplicationsController : ControllerBase
         }
     }
 
+    #endregion
+
+    #region Dashboard
+
     [HttpGet("dashboard")]
     public async Task<ActionResult<object>> GetDashboard()
     {
         try
         {
             var userId = GetCurrentUserId();
+
             var applications = await _context
-                .JobApplications.Where(ja => ja.UserId == userId)
+                .JobApplications.Where(j => j.UserId == userId)
+                .Include(j => j.Company)
                 .ToListAsync();
 
             var statusBreakdown = applications
-                .GroupBy(ja => ja.Status)
+                .GroupBy(j => j.Status)
                 .ToDictionary(g => g.Key.ToString(), g => g.Count());
 
-            var recentApplications = applications
-                .OrderByDescending(ja => ja.DateApplied)
+            var recent = applications
+                .OrderByDescending(j => j.DateApplied)
                 .Take(5)
-                .Select(ja => new
+                .Select(j => new
                 {
-                    ja.Id,
-                    ja.JobTitle,
-                    CompanyName = _context.Companies.First(c => c.Id == ja.CompanyId).Name,
-                    ja.Status,
-                    ja.DateApplied,
+                    j.Id,
+                    j.JobTitle,
+                    CompanyName = j.Company.Name,
+                    j.Status,
+                    j.DateApplied,
                 })
                 .ToList();
 
@@ -506,10 +586,10 @@ public class JobApplicationsController : ControllerBase
             {
                 TotalApplications = applications.Count,
                 StatusBreakdown = statusBreakdown,
-                RecentApplications = recentApplications,
-                ApplicationsThisMonth = applications.Count(ja =>
-                    ja.DateApplied.Month == DateTime.UtcNow.Month
-                    && ja.DateApplied.Year == DateTime.UtcNow.Year
+                RecentApplications = recent,
+                ApplicationsThisMonth = applications.Count(j =>
+                    j.DateApplied.Month == DateTime.UtcNow.Month
+                    && j.DateApplied.Year == DateTime.UtcNow.Year
                 ),
             };
 
@@ -525,30 +605,33 @@ public class JobApplicationsController : ControllerBase
         }
     }
 
+    #endregion
+
     private async Task CreateAuditLog(
         string entityType,
         int entityId,
         string action,
-        string? propertyName,
+        string? property,
         string? oldValue,
         string? newValue,
         string userId
     )
     {
-        var auditLog = new AuditLog
-        {
-            EntityType = entityType,
-            EntityId = entityId,
-            Action = action,
-            PropertyName = propertyName,
-            OldValue = oldValue,
-            NewValue = newValue,
-            UserId = userId,
-            JobApplicationId = entityType == "JobApplication" ? entityId : null,
-            CreatedAt = DateTime.UtcNow,
-        };
+        _context.AuditLogs.Add(
+            new AuditLog
+            {
+                EntityType = entityType,
+                EntityId = entityId,
+                Action = action,
+                PropertyName = property,
+                OldValue = oldValue,
+                NewValue = newValue,
+                UserId = userId,
+                JobApplicationId = entityType == "JobApplication" ? entityId : null,
+                CreatedAt = DateTime.UtcNow,
+            }
+        );
 
-        _context.AuditLogs.Add(auditLog);
         await _context.SaveChangesAsync();
     }
 }

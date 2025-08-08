@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { fetchCompanies } from '../../store/slices/companiesSlice';
 import LoadingSpinner from '../UI/LoadingSpinner';
@@ -6,6 +7,7 @@ import { Building, Plus, Search } from 'lucide-react';
 
 const CompaniesList: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { companies, isLoading } = useAppSelector((state) => state.companies);
 
   useEffect(() => {
@@ -30,7 +32,10 @@ const CompaniesList: React.FC = () => {
             Manage companies and their contacts
           </p>
         </div>
-        <button className="btn-primary flex items-center space-x-2">
+        <button 
+          onClick={() => navigate('/companies/new')} 
+          className="btn-primary flex items-center space-x-2"
+        >
           <Plus className="h-5 w-5" />
           <span>Add Company</span>
         </button>
@@ -60,7 +65,10 @@ const CompaniesList: React.FC = () => {
               Get started by adding your first company.
             </p>
             <div className="mt-6">
-              <button className="btn-primary flex items-center space-x-2 mx-auto">
+              <button 
+                onClick={() => navigate('/companies/new')}
+                className="btn-primary flex items-center space-x-2 mx-auto"
+              >
                 <Plus className="h-5 w-5" />
                 <span>Add Company</span>
               </button>

@@ -32,7 +32,7 @@ public class CreateJobApplicationDto
     public string? Location { get; set; }
     public string? JobUrl { get; set; }
     public ApplicationStatus Status { get; set; } = ApplicationStatus.Applied;
-    public DateTime DateApplied { get; set; } = DateTime.UtcNow;
+    public string DateApplied { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-dd");
     public string? Source { get; set; }
     public List<string> Tags { get; set; } = new();
     public string? ContactPersonName { get; set; }

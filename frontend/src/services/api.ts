@@ -16,7 +16,6 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    console.log("Request config:", config);
     const token = Cookies.get('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -107,7 +106,31 @@ export const jobApplicationsApi = {
   },
 
   createJobApplication: async (data: CreateJobApplicationDto): Promise<JobApplication> => {
-    const response = await api.post('/jobapplications', data);
+    // Map status string to enum integer value
+    // ApplicationStatus enum: Applied=0, Interviewing=1, Offer=2, Rejected=3, Accepted=4, Withdrawn=5
+    const statusMap: { [key: string]: number } = {
+      'Applied': 0,
+      'Interviewing': 1, 
+      'Offer': 2,
+      'Rejected': 3,
+      'Accepted': 4,
+      'Withdrawn': 5
+    };
+    
+    const requestPayload = {
+      jobTitle: data.jobTitle,
+      companyId: data.companyId,
+      location: data.location || "",
+      dateApplied: data.dateApplied,
+      status: statusMap[data.status || "Applied"] ?? 0, // Send as integer enum value
+      notes: data.notes || "",
+      tags: data.tags || [],
+      attachmentPaths: data.attachmentPaths || []
+    };
+    
+    console.log('🚀 Sending job application data:', requestPayload);
+    const response = await api.post('/jobapplications/simple', requestPayload);
+    console.log('✅ Success response:', response.data);
     return response.data;
   },
 

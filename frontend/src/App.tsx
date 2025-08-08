@@ -14,6 +14,7 @@ import Dashboard from './components/Dashboard/Dashboard';
 import JobApplications from './components/JobApplications/JobApplicationsList';
 import JobApplicationForm from './components/JobApplications/JobApplicationForm';
 import Companies from './components/Companies/CompaniesList';
+import CompanyForm from './components/Companies/CompanyForm';
 import Resumes from './components/Resumes/ResumesList';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 
@@ -60,6 +61,7 @@ function AppContent() {
                     <Route path="/applications" element={<JobApplications />} />
                     <Route path="/applications/new" element={<JobApplicationForm />} />
                     <Route path="/companies" element={<Companies />} />
+                    <Route path="/companies/new" element={<CompanyForm />} />
                     <Route path="/resumes" element={<Resumes />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
